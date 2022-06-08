@@ -17,7 +17,7 @@ set val(t2)     0.0                        ;
 
 #Define NS Simulator
 set ns [new Simulator]
-$ns rtproto DV
+
 
 #Create topology object
 set topo       [new Topography]
@@ -40,7 +40,7 @@ set chan [new $val(chan)];
     
 #Define a finish procedure
 proc finish {} {
-    global ns tracefile namfile udpf
+    global ns tracefile namfile udpf udp0 udp1 udp2 udp3
     $ns flush-trace
     close $tracefile
     close $namfile
@@ -231,6 +231,9 @@ $ns at 1.0 "$n18 setdest 109.0 20.0 5.0"
 $ns at 1.0 "$n19 setdest 175.0 185.0 5.0"
 $ns at 5.0 "$n6 setdest 650.0 490.0 25 "
 
+#Define colors for data flow
+$ns color 1 Red
+
 
 #UDP traffic between n16-n10
 set udp0 [new Agent/UDP]
@@ -238,13 +241,14 @@ $ns attach-agent $n16 $udp0
 set null0 [new Agent/LossMonitor]
 $ns attach-agent $n10 $null0
 $ns connect $udp0 $null0
-$udp0 set packetSize_ 1500
+$udp0 set fid_ 1
 
 set cbr0 [new Application/Traffic/CBR]
 $cbr0 attach-agent $udp0
 $cbr0 set packetSize_ 1000
+$udp0 set interval_ 0.05
 $cbr0 set rate_ 0.1Mb
-$cbr0 set random_ null
+$cbr0 set random_ false
 $ns at 1.0 "$cbr0 start"
 $ns at 10.0 "$cbr0 stop"
 
@@ -254,11 +258,13 @@ $ns attach-agent $n8 $udp1
 set null1 [new Agent/LossMonitor]
 $ns attach-agent $n9 $null1
 $ns connect $udp1 $null1
-$udp1 set packetSize_ 1500
+$udp0 set fid_ 2
+
 
 set cbr1 [new Application/Traffic/CBR]
 $cbr1 attach-agent $udp1
 $cbr1 set packetSize_ 1000
+$udp0 set interval_ 0.05
 $cbr1 set rate_ 0.1Mb
 $cbr1 set random_ null
 $ns at 10.0 "$cbr1 start"
@@ -270,11 +276,12 @@ $ns attach-agent $n8 $udp2
 set null2 [new Agent/LossMonitor]
 $ns attach-agent $n10 $null2
 $ns connect $udp2 $null2
-$udp2 set packetSize_ 1500
+$udp0 set fid_ 3
 
 set cbr2 [new Application/Traffic/CBR]
 $cbr2 attach-agent $udp2
 $cbr2 set packetSize_ 1000
+$udp0 set interval_ 0.05
 $cbr2 set rate_ 0.1Mb
 $cbr2 set random_ null
 $ns at 20.0 "$cbr2 start"
@@ -286,16 +293,14 @@ $ns attach-agent $n16 $udp3
 set null3 [new Agent/LossMonitor]
 $ns attach-agent $n9 $null3
 $ns connect $udp3 $null3
-$udp3 set packetSize_ 1500
+$udp0 set fid_ 4
 
 set cbr3 [new Application/Traffic/CBR]
 $cbr3 attach-agent $udp3
 $cbr3 set packetSize_ 1000
+$udp0 set interval_ 0.05
 $cbr3 set rate_ 0.1Mb
-$cbr3 set random_ null
-$ns at 30.0 "$cbr3 start"
-$ns at 40.0 "$cbr3 stop"
-
+$cbr3 set random_ false
 
 #Create links between the nodes
 for {set i 0} {$i < $val(nn) } { incr i } {
@@ -304,22 +309,48 @@ for {set i 0} {$i < $val(nn) } { incr i } {
 
 #Record Procedure which records the data from Sink/end points
 proc record {} {
-global sink null udpf
-#Get an instance of the simulator
-set ns [Simulator instance]
-#Set time after which the procedure should be called again
-set time 0.5
-#Get the correct time
-set now [$ns now]
-#How many bytes have been received by traffic sink/end points?
-set bw0 [$null set bytes_]
-#Calculate the bandwidth (in MBit/s) and write it to the files
-puts $udpf "$now [expr $bw0/$time*8/1000000]"
-#Reset the bytes values on traffic sink/end points
-#$sink set bytes_ 0
-#$null set bytes_ 0
-$ns at [expr $now+$time] "record"
+    global null0 null1 null2 null3 udpf
+    #Get an instance of the simulator
+
+    set ns [Simulator instance]
+    #Set time after which the procedure should be called again
+
+    set time 0.5
+    #Get the correct time
+
+    set now [$ns now]
+    #How many bytes have been received by traffic sink/end points?
+
+    set bw0 [$null3 set bytes_]
+    #Calculate the bandwidth (in MBit/s) and write it to the files
+
+    puts $udpf "$now [expr $bw0/$time*8/1000000]"
+    #Reset the bytes values on traffic sink/end points
+
+    $null3 set bytes_ 0
+    $ns at [expr $now+$time] "record"
 }
+
+#Schedule events for the CBR agents
+$ns at 30.0 "$cbr3 start"
+$ns at 40.0 "$cbr3 stop"
+
+$ns rtproto DV
+# #Failing link between node8 & node9
+# $ns rtmodel-at 9.0 down $n8 $n9
+
+# #Restablishing link between node8 & node9
+# $ns rtmodel-at 12.5 up $n8 $n9
+
+#Call the record procedure at start of simulation time (0 sec)
+$ns at 0.0 "record"
+
+#Call the finish procedure after 15 seconds of simulation time
+$ns at 40.0 "finish"
+
+#Print CBR packet size and interval
+puts "CBR packet size = [$cbr3 set packet_size_]"
+puts "CBR interval = [$cbr3 set interval_]" 
 
 $ns at $val(stop) "$ns nam-end-wireless $val(stop)"
 $ns at $val(stop) "finish"
